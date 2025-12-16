@@ -1,0 +1,29 @@
+{
+  "name": "stremi-latam-node",
+  "version": "1.0.0",
+  "description": "Stremio Lat-Team Addon - Migrado a Node.js con Fastify",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js",
+    "dev": "nodemon src/index.js"
+  },
+  "keywords": [
+    "stremio",
+    "addon",
+    "streaming",
+    "latam"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "@fastify/cors": "^8.5.0",
+    "axios": "^1.6.0",
+    "axios-cookiejar-support": "^6.0.5",
+    "dotenv": "^16.3.0",
+    "fastify": "^4.25.0",
+    "tough-cookie": "^6.0.0"
+  },
+  "devDependencies": {
+    "nodemon": "^3.0.2"
+  }
+}
