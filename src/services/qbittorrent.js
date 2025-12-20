@@ -458,6 +458,39 @@ class QBittorrentClient {
       return null;
     }
   }
+
+  /**
+   * Obtener información de transferencia y espacio de qBittorrent
+   */
+  async obtenerInfoTransferencia() {
+    try {
+      const response = await this.session.get('/api/v2/transfer/info');
+      
+      if (response.status === 200) {
+        const info = response.data;
+        // Convertir bytes a formato legible
+        const formatBytes = (bytes) => {
+          if (bytes === 0) return '0 B';
+          const k = 1024;
+          const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
+          const i = Math.floor(Math.log(bytes) / Math.log(k));
+          return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+        };
+
+        return {
+          dlSpeed: formatBytes(info.dl_info_speed),
+          upSpeed: formatBytes(info.up_info_speed),
+          dlData: formatBytes(info.dl_info_data),
+          upData: formatBytes(info.up_info_data),
+          freeSpace: formatBytes(info.free_space_on_disk)
+        };
+      }
+      return null;
+    } catch (error) {
+      console.log(`Error obteniendo info de transferencia: ${error.message}`);
+      return null;
+    }
+  }
 }
 
 module.exports = QBittorrentClient;
