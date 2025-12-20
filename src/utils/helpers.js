@@ -69,12 +69,14 @@ function parseMediaInfo(mediaInfo) {
     }
   }
 
-  // Buscar idiomas de audio
+  // Buscar idiomas de audio (optimizado con matchAll)
   const langRegex = /Title\s*:\s*([^\r\n]+).*?Language\s*:\s*(\w+)/gi;
   const seenLangs = new Set();
-  let match;
   
-  while ((match = langRegex.exec(mediaInfo)) !== null) {
+  // matchAll es más eficiente que exec en un loop
+  const matches = [...mediaInfo.matchAll(langRegex)];
+  
+  for (const match of matches) {
     const [, title, lang] = match;
     const contextStart = match.index;
     const context = mediaInfo.substring(contextStart, contextStart + 200);

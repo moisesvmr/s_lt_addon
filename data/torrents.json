@@ -1,0 +1,49 @@
+{
+  "torrents": {
+    "13194": {
+      "infoHash": "4c61c02b99a21461bbea7c29fc8f8a7da64936cb",
+      "name": "The.Super.Mario.Bros.Movie.2023.1080p.WEB-DL.DD+.5.1.Atmos.H.264.mkv",
+      "size": 5302696190,
+      "files": 1,
+      "type": "movie",
+      "addedAt": "2025-12-20T17:25:02.795Z",
+      "updatedAt": "2025-12-20T17:25:02.795Z"
+    },
+    "27384": {
+      "infoHash": "cce1407810bbd56adca08163c01b230f397b3547",
+      "name": "Una.Película.de.Huevos.2006.1080p.AMZN.WEB-DL.DD+.2.0.H.264.mkv",
+      "size": 4323943472,
+      "files": 1,
+      "type": "movie",
+      "addedAt": "2025-12-20T18:00:00.826Z",
+      "updatedAt": "2025-12-20T18:00:00.826Z"
+    },
+    "35516": {
+      "infoHash": "71fdc3bc306aea704dfd5f495643926569cd3d1e",
+      "name": "Ranma.½.(2024).S01.1080p.NF.WEB-DL.AAC.2.0.H.264-LatTeam",
+      "size": 11319532633,
+      "files": 12,
+      "type": "series",
+      "addedAt": "2025-12-20T17:22:52.800Z",
+      "updatedAt": "2025-12-20T17:22:52.800Z"
+    },
+    "53163": {
+      "infoHash": "451c97fa2f2a2d4c76cb18c71e8ebe96b7d311c6",
+      "name": "Adventure.Time.Fionna.and.Cake.S02E08.El.Insecto.que.Cantaba.1080p.HMAX.WEB-DL.DDP5.1.H.265-LatTeam.mkv",
+      "size": 346952901,
+      "files": 1,
+      "type": "series",
+      "addedAt": "2025-12-20T17:16:12.370Z",
+      "updatedAt": "2025-12-20T17:16:12.370Z"
+    },
+    "53524": {
+      "infoHash": "1826b7e8dc8544a19f7aa4aebf64a1265180d20e",
+      "name": "Adventure.Time.Fionna.and.Cake.S02E09.El.Gusano.y.su.Huerto.1080p.HMAX.WEB-DL.DDP5.1.H.265-LatTeam.mkv",
+      "size": 490922858,
+      "files": 1,
+      "type": "series",
+      "addedAt": "2025-12-20T17:20:38.384Z",
+      "updatedAt": "2025-12-20T17:20:38.384Z"
+    }
+  }
+}

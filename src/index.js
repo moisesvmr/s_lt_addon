@@ -4,6 +4,8 @@ const cors = require('@fastify/cors');
 const QBittorrentClient = require('./services/qbittorrent');
 const { consultarLatamTmdb } = require('./services/streaming');
 const cache = require('./services/cache');
+const database = require('./services/database');
+const { getTorrentHashFromUrl, getTorrentInfo } = require('./services/torrent-parser');
 const { sleep } = require('./utils/helpers');
 
 // Registrar CORS
@@ -36,20 +38,104 @@ const HOST = process.env.HOST || '0.0.0.0';
 
 // Cliente qBittorrent global (reutilizable)
 let qbtGlobal = null;
+let qbtRetryCount = 0;
+const MAX_QB_RETRIES = 3;
+const QB_RETRY_DELAY = 2; // segundos
 
-// Obtener o crear cliente qBittorrent
+// Obtener o crear cliente qBittorrent con retry automático
 async function getQbtClient() {
-  if (!qbtGlobal) {
-    qbtGlobal = new QBittorrentClient(QBIT_HOST, QBIT_USER, QBIT_PASS);
+  if (qbtGlobal) {
+    return qbtGlobal;
+  }
+  
+  // Intentar conectar con retry y backoff exponencial
+  for (let attempt = 0; attempt < MAX_QB_RETRIES; attempt++) {
     try {
+      console.log(`🔌 Conectando a qBittorrent (intento ${attempt + 1}/${MAX_QB_RETRIES})...`);
+      qbtGlobal = new QBittorrentClient(QBIT_HOST, QBIT_USER, QBIT_PASS);
       await qbtGlobal.connect();
+      qbtRetryCount = 0; // Resetear contador al conectar exitosamente
+      console.log(`✅ Cliente qBittorrent conectado`);
+      return qbtGlobal;
     } catch (error) {
-      console.log(`⚠️  Error conectando qBittorrent: ${error.message}`);
+      console.log(`⚠️  Error conectando qBittorrent (intento ${attempt + 1}): ${error.message}`);
       qbtGlobal = null;
-      throw error;
+      
+      // Si no es el último intento, esperar con backoff exponencial
+      if (attempt < MAX_QB_RETRIES - 1) {
+        const waitTime = QB_RETRY_DELAY * Math.pow(2, attempt); // 2s, 4s, 8s
+        console.log(`⏳ Reintentando en ${waitTime}s...`);
+        await sleep(waitTime);
+      } else {
+        console.log(`❌ No se pudo conectar a qBittorrent después de ${MAX_QB_RETRIES} intentos`);
+        throw error;
+      }
     }
   }
-  return qbtGlobal;
+  
+  throw new Error('No se pudo conectar a qBittorrent');
+}
+
+/**
+ * Verificar/Agregar torrent usando el flujo optimizado SIN TAGs
+ * @param {string} latamId - ID del torrent en Lat-Team
+ * @param {string} type - Tipo: 'movie' o 'series'
+ * @returns {Promise<{hash: string, torrent: object}>}
+ */
+async function ensureTorrentExists(latamId, type) {
+  const qbt = await getQbtClient();
+  
+  // 1. Verificar si existe en DB local
+  let dbEntry = database.get(latamId);
+  
+  if (dbEntry) {
+    console.log(`📂 Torrent en DB: ${latamId} → Hash: ${dbEntry.infoHash.substring(0, 8)}...`);
+    
+    // 2. Verificar en qBittorrent por hash
+    const { exists, torrent } = await qbt.verificarHash(dbEntry.infoHash);
+    
+    if (exists) {
+      console.log(`✅ Torrent existe en qBittorrent (reutilizando)`);
+      return { hash: dbEntry.infoHash, torrent };
+    } else {
+      console.log(`⚠️  Torrent en DB pero no en qBittorrent, re-agregando...`);
+    }
+  }
+  
+  // 3. Descargar .torrent y extraer hash
+  const torrentUrl = `https://lat-team.com/torrent/download/${latamId}.${TORRENT_API_KEY}`;
+  const torrentInfo = await getTorrentInfo(torrentUrl);
+  
+  // 4. Guardar en DB
+  database.set(latamId, {
+    infoHash: torrentInfo.infoHash,
+    name: torrentInfo.name,
+    size: torrentInfo.length,
+    files: torrentInfo.files,
+    type: type,
+    addedAt: new Date().toISOString()
+  });
+  
+  // 5. Verificar NUEVAMENTE en qBittorrent (por si ya existía sin estar en DB)
+  const { exists: alreadyExists, torrent: existingTorrent } = await qbt.verificarHash(torrentInfo.infoHash);
+  
+  if (alreadyExists) {
+    console.log(`✅ Torrent ya existía en qBittorrent (migrado a DB)`);
+    return { hash: torrentInfo.infoHash, torrent: existingTorrent };
+  }
+  
+  // 6. Agregar torrent nuevo
+  const savePath = type === 'movie' ? TORRENT_MOVIES_PATH : TORRENT_SERIES_PATH;
+  await qbt.agregarTorrentDesdeUrl(torrentUrl, savePath);
+  console.log(`✅ Torrent agregado a qBittorrent en: ${savePath}`);
+  
+  // Esperar un momento para que qBittorrent procese
+  await sleep(RETRY_DELAY);
+  
+  // 7. Obtener info del torrent recién agregado
+  const { torrent: newTorrent } = await qbt.verificarHash(torrentInfo.infoHash);
+  
+  return { hash: torrentInfo.infoHash, torrent: newTorrent };
 }
 
 // Manifest del addon
@@ -166,35 +252,25 @@ fastify.route({
     console.log(`Redireccionando película ID: ${id}`);
 
     try {
-      const qbt = await getQbtClient();
-
-      // Verificar si el torrent ya existe
-      let torrentsExistentes = await qbt.obtenerTorrentsConEtiqueta(id);
-      if (torrentsExistentes.length === 0) {
-        const torrentUrl = `https://lat-team.com/torrent/download/${id}.${TORRENT_API_KEY}`;
-        await qbt.agregarTorrentDesdeUrl(torrentUrl, TORRENT_MOVIES_PATH);
-        await sleep(RETRY_DELAY); // Dar tiempo inicial
-      } else {
-        console.log(`Torrent ${id} ya existe, reutilizando...`);
-      }
-
-      // Reintentar hasta obtener el torrent
+      // Usar flujo optimizado SIN TAGs
+      const { hash, torrent } = await ensureTorrentExists(id, 'movie');
+      
+      // Reintentar hasta obtener el stream
       for (let intento = 0; intento < MAX_RETRIES; intento++) {
-        torrentsExistentes = await qbt.obtenerTorrentsConEtiqueta(id);
-
-        if (torrentsExistentes.length > 0) {
-          for (const torrentPath of torrentsExistentes) {
-            const nuevaUrl = await qbt.obtenerStreamsDeTorrent(
-              torrentPath,  // Ya incluye la ruta completa desde qBittorrent
-              STREAM_API_URL,
-              STREAM_API_TOKEN,
-              STREAM_API_VERIFY_SSL
-            );
-            if (nuevaUrl) {
-              console.log(`Stream obtenido: ${nuevaUrl}`);
-              cache.set(cacheKey, nuevaUrl);
-              return reply.redirect(nuevaUrl);
-            }
+        const { exists, torrent: currentTorrent } = await (await getQbtClient()).verificarHash(hash);
+        
+        if (exists && currentTorrent.content_path) {
+          const nuevaUrl = await (await getQbtClient()).obtenerStreamsDeTorrent(
+            currentTorrent.content_path,
+            STREAM_API_URL,
+            STREAM_API_TOKEN,
+            STREAM_API_VERIFY_SSL
+          );
+          
+          if (nuevaUrl) {
+            console.log(`Stream obtenido: ${nuevaUrl}`);
+            cache.set(cacheKey, nuevaUrl);
+            return reply.redirect(nuevaUrl);
           }
         }
 
@@ -245,21 +321,15 @@ fastify.route({
 
     try {
       const qbt = await getQbtClient();
-
-      // Verificar si el torrent ya existe
-      let torrentsExistentes = await qbt.obtenerTorrentsConEtiqueta(id);
-      if (torrentsExistentes.length === 0) {
-        const torrentUrl = `https://lat-team.com/torrent/download/${id}.${TORRENT_API_KEY}`;
-        await qbt.agregarTorrentDesdeUrl(torrentUrl, TORRENT_SERIES_PATH);
-        await sleep(RETRY_DELAY); // Dar tiempo inicial
-      } else {
-        console.log(`Torrent ${id} ya existe, reutilizando...`);
-      }
+      
+      // Usar flujo optimizado SIN TAGs
+      const { hash } = await ensureTorrentExists(id, 'series');
 
       // Reintentar hasta obtener el episodio
       for (let intento = 0; intento < MAX_RETRIES; intento++) {
         try {
-          const { idArchivo, rutaArchivo, hash } = await qbt.obtenerIdCapitulo(season, episode, id);
+          // Usar hash en lugar de ID
+          const { idArchivo, rutaArchivo, hash: torrentHash } = await qbt.obtenerIdCapituloByHash(season, episode, hash);
 
           // Limpiar ruta de archivo
           let cleanPath = rutaArchivo;
@@ -274,7 +344,7 @@ fastify.route({
 
           console.log(`ID Capítulo: ${idArchivo}, Ruta: ${cleanPath}`);
 
-          await qbt.subirPrioridadArchivo(hash, idArchivo);
+          await qbt.subirPrioridadArchivo(torrentHash, idArchivo);
           const location = `${TORRENT_SERIES_PATH}/${cleanPath}`;
           const nuevaUrl = await qbt.obtenerStreamsDeTorrent(
             location,

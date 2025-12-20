@@ -1,7 +1,7 @@
 const axios = require('axios');
 const { formatSize, parseMediaInfo } = require('../utils/helpers');
 const { obtenerInfoUsuario } = require('./tracker');
-const { verificarCacheQbt, buscarTorrents, coincideEpisodio } = require('./streaming-helpers');
+const { verificarCacheQbt, verificarCacheBatch, buscarTorrents, coincideEpisodio } = require('./streaming-helpers');
 
 /**
  * Formatear título del stream al estilo Torrentio/Aiostream
@@ -87,6 +87,65 @@ function formatStreamTitle(item) {
   lines.push(statusLine);
 
   return lines.join('\n');
+}
+
+/**
+ * Ordenar streams por resolución y seeders
+ * Los primeros 2 streams (estadísticas) no se ordenan
+ */
+function sortStreams(streams) {
+  if (streams.length <= 2) {
+    return streams;
+  }
+
+  // Separar estadísticas (primeros 2) de los torrents
+  const statsStreams = streams.slice(0, 2);
+  const torrentStreams = streams.slice(2);
+
+  // Peso de resoluciones
+  const resolutionWeight = {
+    '2160p': 4,
+    '1080p': 3,
+    '720p': 2,
+    '480p': 1
+  };
+
+  // Extraer resolución y seeders del título
+  const parseStreamData = (stream) => {
+    const title = stream.title;
+    
+    // Buscar resolución
+    let resolution = null;
+    let resWeight = 0;
+    for (const [res, weight] of Object.entries(resolutionWeight)) {
+      if (title.includes(res)) {
+        resolution = res;
+        resWeight = weight;
+        break;
+      }
+    }
+
+    // Buscar seeders (formato: S:123)
+    const seedMatch = title.match(/S:(\d+)/);
+    const seeders = seedMatch ? parseInt(seedMatch[1]) : 0;
+
+    return { resolution, resWeight, seeders, stream };
+  };
+
+  // Parsear y ordenar
+  const parsedStreams = torrentStreams.map(parseStreamData);
+  
+  parsedStreams.sort((a, b) => {
+    // Primero por resolución (descendente)
+    if (b.resWeight !== a.resWeight) {
+      return b.resWeight - a.resWeight;
+    }
+    // Luego por seeders (descendente)
+    return b.seeders - a.seeders;
+  });
+
+  // Reconstruir array: estadísticas + torrents ordenados
+  return [...statsStreams, ...parsedStreams.map(p => p.stream)];
 }
 
 /**
@@ -184,23 +243,25 @@ async function consultarLatamTmdb(id, token, tmdbKey, domain, addonKey, qbtClien
       allTorrents.push(...torrents);
     }
     
-    // Procesar torrents y verificar cache
-    const processedStreams = await Promise.all(
-      allTorrents.map(async (item) => {
-        let title = formatStreamTitle(item);
-        
-        // Verificar cache y añadir emoji si está presente
-        const enCache = await verificarCacheQbt(qbtClient, item.id);
-        if (enCache) {
-          title = `⚡ ${title}`;
-        }
-        
-        return {
-          title,
-          url: `${domain}/${addonKey}/rd1/${item.id}`
-        };
-      })
-    );
+    // Verificar cache en BATCH (1 sola llamada a qBittorrent)
+    const torrentIds = allTorrents.map(item => item.id);
+    const cacheMap = await verificarCacheBatch(qbtClient, torrentIds);
+    
+    // Procesar torrents usando el mapa de cache
+    const processedStreams = allTorrents.map((item) => {
+      let title = formatStreamTitle(item);
+      
+      // Obtener estado de cache del mapa
+      const enCache = cacheMap.get(item.id) || false;
+      if (enCache) {
+        title = `⚡ ${title}`;
+      }
+      
+      return {
+        title,
+        url: `${domain}/${addonKey}/rd1/${item.id}`
+      };
+    });
     
     streams.push(...processedStreams);
     
@@ -209,7 +270,9 @@ async function consultarLatamTmdb(id, token, tmdbKey, domain, addonKey, qbtClien
     for (const stream of streams) {
       uniqueStreams[stream.url] = stream;
     }
-    return Object.values(uniqueStreams);
+    
+    // Ordenar por resolución y seeders
+    return sortStreams(Object.values(uniqueStreams));
   } else {
     // Es una serie
     const idParts = id.split(':');
@@ -229,25 +292,30 @@ async function consultarLatamTmdb(id, token, tmdbKey, domain, addonKey, qbtClien
       allTorrents.push(...torrents);
     }
     
-    // Filtrar por episodio y procesar
-    const processedStreams = await Promise.all(
-      allTorrents
-        .filter(item => coincideEpisodio(item.attributes.name, seasonNumber, episodeNumber))
-        .map(async (item) => {
-          let title = formatStreamTitle(item);
-          
-          // Verificar cache
-          const enCache = await verificarCacheQbt(qbtClient, item.id);
-          if (enCache) {
-            title = `⚡ ${title}`;
-          }
-          
-          return {
-            title,
-            url: `${domain}/${addonKey}/rd2/${seasonNumber}/${episodeNumber}/${item.id}`
-          };
-        })
+    // Filtrar por episodio
+    const filteredTorrents = allTorrents.filter(item => 
+      coincideEpisodio(item.attributes.name, seasonNumber, episodeNumber)
     );
+    
+    // Verificar cache en BATCH (1 sola llamada a qBittorrent)
+    const torrentIds = filteredTorrents.map(item => item.id);
+    const cacheMap = await verificarCacheBatch(qbtClient, torrentIds);
+    
+    // Procesar usando el mapa de cache
+    const processedStreams = filteredTorrents.map((item) => {
+      let title = formatStreamTitle(item);
+      
+      // Obtener estado de cache del mapa
+      const enCache = cacheMap.get(item.id) || false;
+      if (enCache) {
+        title = `⚡ ${title}`;
+      }
+      
+      return {
+        title,
+        url: `${domain}/${addonKey}/rd2/${seasonNumber}/${episodeNumber}/${item.id}`
+      };
+    });
     
     streams.push(...processedStreams);
 
@@ -256,7 +324,9 @@ async function consultarLatamTmdb(id, token, tmdbKey, domain, addonKey, qbtClien
     for (const stream of streams) {
       uniqueStreams[stream.url] = stream;
     }
-    return Object.values(uniqueStreams);
+    
+    // Ordenar por resolución y seeders
+    return sortStreams(Object.values(uniqueStreams));
   }
 }
 

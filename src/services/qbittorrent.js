@@ -62,18 +62,30 @@ class QBittorrentClient {
   }
 
   /**
-   * Verificar si un hash existe en qBittorrent
+   * Verificar si un hash existe en qBittorrent y obtener su información
    */
   async verificarHash(infoHash) {
+    console.log(`\n🔍 [verificar_hash] Verificando hash en qBittorrent...`);
+    console.log(`   Hash: ${infoHash}`);
+    
     const response = await this.session.get(`/api/v2/torrents/info`, {
       params: { hashes: infoHash }
     });
 
-    if (response.status === 200) {
-      return response.data.length > 0;
+    if (response.status === 200 && response.data.length > 0) {
+      const torrent = response.data[0];
+      console.log(`   ✅ Torrent encontrado: ${torrent.name}`);
+      console.log(`   Path: ${torrent.content_path}`);
+      return {
+        exists: true,
+        torrent: torrent
+      };
     } else {
-      console.log('Error al verificar el hash en qBittorrent');
-      return false;
+      console.log('   ❌ Hash no encontrado en qBittorrent');
+      return {
+        exists: false,
+        torrent: null
+      };
     }
   }
 
@@ -125,97 +137,6 @@ class QBittorrentClient {
     } catch (error) {
       console.log(`   ❌ Excepción al agregar torrent: ${error.message}`);
     }
-  }
-
-  /**
-   * Obtener torrents con una etiqueta específica y formato válido
-   */
-  async obtenerTorrentsConEtiqueta(etiqueta) {
-    console.log(`\n🔍 [obtener_torrents_con_etiqueta] Buscando torrents...`);
-    console.log(`   Etiqueta: ${etiqueta}`);
-    console.log(`   Host: ${this.host}`);
-
-    try {
-      const response = await this.session.get('/api/v2/torrents/info', {
-        params: { filter: 'all' }
-      });
-
-      console.log(`   Status code: ${response.status}`);
-
-      const torrentsConEtiqueta = [];
-
-      if (response.status === 200) {
-        const torrents = response.data;
-        console.log(`   Total torrents en qBittorrent: ${torrents.length}`);
-
-        for (const torrent of torrents) {
-          // Manejar tags como string o lista
-          let tags = torrent.tags || [];
-          if (typeof tags === 'string') {
-            tags = tags.split(',').map(tag => tag.trim()).filter(tag => tag);
-          }
-
-          console.log(`   Torrent: ${(torrent.name || 'Sin nombre').substring(0, 50)}... Tags: ${tags}`);
-
-          if (tags.includes(etiqueta)) {
-            const formatosPermitidos = ['mp4', 'mkv', 'avi', 'mov', 'wmv', 'flv', 'webm'];
-            const contentPath = torrent.content_path || '';
-            console.log(`      ✓ Etiqueta coincide! Path: ${contentPath}`);
-
-            if (formatosPermitidos.some(ext => contentPath.toLowerCase().endsWith(`.${ext}`))) {
-              torrentsConEtiqueta.push(contentPath);
-              console.log(`      ✅ Formato válido, agregado a lista`);
-            } else {
-              console.log(`      ⚠️  Formato no válido, ignorado`);
-            }
-          }
-        }
-      } else {
-        console.log(`   ❌ Error al obtener torrents: ${response.status}`);
-      }
-
-      console.log(`   Resultado: ${torrentsConEtiqueta.length} torrents encontrados`);
-      return torrentsConEtiqueta;
-    } catch (error) {
-      console.log(`   ❌ Excepción: ${error.message}`);
-      return [];
-    }
-  }
-
-  /**
-   * Obtener hashes de torrents con una etiqueta específica
-   */
-  async obtenerHashConEtiqueta(etiqueta) {
-    console.log(`\n🔑 [obtener_hash_con_etiqueta] Obteniendo hashes...`);
-    console.log(`   Etiqueta: ${etiqueta}`);
-    console.log(`   Host: ${this.host}`);
-
-    const response = await this.session.get('/api/v2/torrents/info', {
-      params: { filter: 'all' }
-    });
-
-    console.log(`   Status code: ${response.status}`);
-
-    const hashList = [];
-    if (response.status === 200) {
-      const torrents = response.data;
-      console.log(`   Total torrents: ${torrents.length}`);
-
-      for (const torrent of torrents) {
-        const tags = torrent.tags || '';
-        console.log(`      Torrent: ${(torrent.name || 'Sin nombre').substring(0, 40)}... Tags: ${tags}`);
-
-        if (tags.includes(etiqueta)) {
-          hashList.push(torrent.hash);
-          console.log(`         ✅ Hash agregado: ${torrent.hash}`);
-        }
-      }
-    } else {
-      console.log(`   ❌ Error al obtener torrents`);
-    }
-
-    console.log(`   Total hashes encontrados: ${hashList.length}`);
-    return hashList;
   }
 
   /**
@@ -283,13 +204,13 @@ class QBittorrentClient {
   }
 
   /**
-   * Obtener ID de capítulo específico (para series)
+   * Obtener ID de capítulo específico (para series) usando hash directamente
    */
-  async obtenerIdCapitulo(season, episode, id) {
-    console.log(`\n📺 [obtener_id_capitulo] Buscando episodio...`);
+  async obtenerIdCapituloByHash(season, episode, hash) {
+    console.log(`\n📺 [obtener_id_capitulo_by_hash] Buscando episodio...`);
     console.log(`   Season original: ${season}`);
     console.log(`   Episode original: ${episode}`);
-    console.log(`   ID etiqueta: ${id}`);
+    console.log(`   Hash: ${hash}`);
     console.log(`   Host: ${this.host}`);
 
     // Si season y episode son de un dígito, agregar un 0 adelante
@@ -299,20 +220,6 @@ class QBittorrentClient {
     const cap = `S${season}E${episode}`;
     console.log(`   Capítulo formateado: ${cap}`);
 
-    const torrents = await this.obtenerHashConEtiqueta(id);
-    console.log(`   Hashes encontrados: ${torrents}`);
-
-    let hash = null;
-    for (const torrentHash of torrents) {
-      hash = torrentHash;
-    }
-
-    if (hash === null) {
-      console.log(`   ❌ No se encontró torrent con etiqueta ${id}`);
-      throw new Error(`No se encontró torrent con etiqueta ${id}`);
-    }
-
-    console.log(`   Hash seleccionado: ${hash}`);
     const nombreTorrent = await this.obtenerNombreTorrent(hash);
     console.log(`   Nombre torrent: ${nombreTorrent}`);
 
