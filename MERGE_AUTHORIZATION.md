@@ -61,17 +61,21 @@ Se identificaron 23 comentarios de revisión, principalmente:
 Ninguno
 
 ### Importantes (3)
-1. **Race condition en getQbtClient()** - Múltiples requests simultáneos pueden crear múltiples instancias
-2. **Timeout hardcodeado** - Debería ser configurable vía env var
-3. **Manejo de errores de filesystem** - Mejorar validación de permisos
+1. **Race condition en getQbtClient()** (src/index.js:76) - Múltiples requests simultáneos pueden crear múltiples instancias del cliente qBittorrent. Impacto: Posibles conexiones duplicadas bajo alta concurrencia.
+2. **Timeout hardcodeado** (src/services/torrent-parser.js:187, 218) - Timeout de 15000ms está hardcodeado en dos lugares. Debería ser configurable vía variable de entorno TORRENT_DOWNLOAD_TIMEOUT.
+3. **Manejo de errores de filesystem** (src/services/database.js:24) - Falta validación detallada de permisos y rutas al crear directorios. Podría fallar silenciosamente en caso de permisos insuficientes.
 
 ### Menores (20)
-- Variables sin usar (qbtRetryCount, getTorrentHashFromUrl, verificarCacheQbt, torrent)
-- Logs de debug comentados que deberían eliminarse
-- Información sensible en logs (API tokens)
-- Validaciones faltantes
-- Nombres de variables poco claros
-- Código duplicado
+- Variables sin usar:
+  - `qbtRetryCount` (src/index.js:41)
+  - `getTorrentHashFromUrl` (src/index.js:8)
+  - `verificarCacheQbt` (src/services/streaming.js:4)
+  - `torrent` (src/index.js:256)
+- Logs de debug comentados (src/services/tracker.js:14)
+- Información sensible en logs - API tokens visibles (src/services/streaming.js:164, src/services/tracker.js:22)
+- Validaciones faltantes (bencode integers, API responses)
+- Nombres de variables poco claros (`cap` en src/services/qbittorrent.js:220)
+- Unidad incorrecta en display (src/services/streaming.js:222 - "/s" en totales)
 
 ## Decisión
 
