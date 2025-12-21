@@ -20,10 +20,7 @@ Addon de Stremio para streaming de torrents desde [Lat-Team](https://lat-team.co
 - **Stats de qBittorrent**: Velocidad de descarga/subida, espacio libre
 - **Info Detallada**: Códec, HDR, audio, idiomas, seeders/leechers
 
-### ⚡ Optimizaciones
-- **Conexión Reutilizable**: Cliente qBittorrent global (40-50% más rápido)
-- **Operaciones Paralelas**: Verificaciones y prioridades concurrentes (10-20x)
-- **Código Optimizado**: 24% menos código, más eficiente
+
 
 ---
 
