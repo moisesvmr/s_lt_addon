@@ -80,8 +80,9 @@ QBIT_HOST=http://localhost:8080
 QBIT_USER=admin
 QBIT_PASS=tu_password
 
-# Rutas
-TORRENT_BASE_PATH=/downloads
+# Torrent Settings
+TORRENT_MOVIES_PATH=/datos/videosc/movies  #directorio para peliculas en qbittorrent
+TORRENT_SERIES_PATH=/datos/videosc/series  #directorio para series en qbittorrent
 
 # Stream API
 STREAM_API_URL=http://localhost:9443/video
