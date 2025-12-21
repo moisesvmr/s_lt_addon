@@ -44,8 +44,16 @@ const QB_RETRY_DELAY = 2; // segundos
 
 // Obtener o crear cliente qBittorrent con retry automático
 async function getQbtClient() {
+  // Si existe el cliente, verificar que la sesión siga activa
   if (qbtGlobal) {
-    return qbtGlobal;
+    // Verificar si la sesión está activa con un simple request
+    if (qbtGlobal.session) {
+      return qbtGlobal;
+    } else {
+      // Sesión inválida, forzar reconexión
+      console.log(`⚠️  Sesión qBittorrent inválida, reconectando...`);
+      qbtGlobal = null;
+    }
   }
   
   // Intentar conectar con retry y backoff exponencial
