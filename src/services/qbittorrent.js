@@ -84,10 +84,9 @@ class QBittorrentClient {
       console.log('   ❌ Hash no encontrado en qBittorrent');
       return {
         exists: false,
-          torrent: null
-        };
-      }
-    }, 'verificarHash');
+        torrent: null
+      };
+    }
   }
 
   /**
